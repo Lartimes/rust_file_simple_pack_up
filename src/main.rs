@@ -9,6 +9,7 @@ use std::process::Command;
 use std::string::ToString;
 use std::thread::sleep;
 use std::time::Duration;
+
 use chrono::{Datelike, Utc};
 use flate2::Compression;
 use flate2::write::GzEncoder;
@@ -80,6 +81,8 @@ fn count_loop(host_dirs: String) {
                 sleep(Duration::from_secs(5));
                 break;
             }
+            //
+            print!("放入 host：dirkey");
             let files: String = con.getset(&key, "").unwrap(); //读写分离
             let mut pathes: Vec<&str> = vec![];
             for (index, file) in files.split(",").enumerate() {
@@ -121,13 +124,10 @@ fn clean_up(root: &Path, host_ip: &str, con: &mut Connection) {
             } else {//但不可删除
                 if path.is_absolute() {
                     match path.metadata() {
-                        // 获取file元数据
-                        // 数据是否大于 50MB
-                        //大于 进行压缩，软连接
                         Ok(meta) => {
                             let bytes = Float::floor(meta.file_size() as f64 / 1024f64) as i32;
                             println!("{}", bytes);
-                            if bytes > 50 {
+                            if bytes > 16 {
                                 let pathes = vec![path.to_str().unwrap()];
                                 let sha256 = get_sha256_id(&pathes);
                                 println!("{}", sha256);
@@ -159,11 +159,11 @@ fn clean_up(root: &Path, host_ip: &str, con: &mut Connection) {
                                     len = 1;
                                 }
                                 con.setrange(&host_dirs, len - 1, parent_path).unwrap_or(0);
-                                //setrange 健壮性
-                                //ip:directories  :   files ,  files , ,,,,
-                                //  let host_dirs = host_ip.clone().add(":directories");
-                                //     let host_files = host_ip.add(":files");
-                                let file_key = String::from(&host_dirs).add(&key);
+
+
+                                let file_key = String::from(host_ip).add(&key);
+
+                                println!("{}", file_key);
                                 let mut child_path = path.display().to_string();
                                 let mut len = con.strlen(&file_key).unwrap_or(0);
                                 if len != 0 {
@@ -171,7 +171,8 @@ fn clean_up(root: &Path, host_ip: &str, con: &mut Connection) {
                                 } else {
                                     len = 1;
                                 }
-                                con.setrange(&host_dirs, len - 1, child_path).unwrap_or(0);
+                                //
+                                con.setrange(&file_key, len - 1, child_path).unwrap_or(0);
                             }
                         }
                         Err(_) => {}
@@ -202,7 +203,6 @@ fn get_gap_days(path: &Path) -> bool {
             date = Option::Some(String::from(&value[0..10]));
         }
     }
-    //2024/01/06
     if date.is_none() {
         false;
     }
@@ -210,7 +210,7 @@ fn get_gap_days(path: &Path) -> bool {
         None => { "2024/01/07".to_string() }
         Some(time) => {
             println!("{}", time);
-            if time.eq("NONE"){
+            if time.eq("NONE") {
                 return false;
             }
             time
@@ -227,8 +227,6 @@ fn get_gap_days(path: &Path) -> bool {
     if year - last_year > 2 {
         return true;
     }
-    // 3 6
-    //  1 2 3 4 5 6 7 8 9 10 11 12
     if last_month > month {
         return true;
     }
@@ -240,10 +238,9 @@ fn get_gap_days(path: &Path) -> bool {
     if month_gap > 0 {
         return true;
     }
-     day - last_day > 15
+    day - last_day > 15
 }
 
-/*pathes : vec[str,str, str,] , 都有一个共同目录*/
 fn tar_multi_files(pathes: &Vec<&str>, sha256: String) -> String {
     let mut parent_path = String::from("");
     if pathes.len() > 0 {
@@ -262,7 +259,6 @@ fn tar_multi_files(pathes: &Vec<&str>, sha256: String) -> String {
     let enc = GzEncoder::new(tar_gz, Compression::default());
     let mut tar = tar::Builder::new(enc);
     for a in pathes.iter() {
-        // let mut  file = fs::File::open(a).unwrap();
         let mut file = fs::File::open(a).unwrap();
         let path_buf = PathBuf::from(a);
         let name = path_buf.file_name().unwrap().to_str().unwrap();
@@ -308,9 +304,6 @@ fn create_shortcut(source_file: &Path, shortcut_file: &Path) {
         .unwrap_or_else(|e| {
             panic!("Failed to execute process: {}", e);
         });
-    // 打印命令输出
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    println!("STDOUT: {}", stdout);
 }
 
 
